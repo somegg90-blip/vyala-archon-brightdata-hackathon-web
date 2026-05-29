@@ -1,7 +1,5 @@
 // ─── Data Contract ────────────────────────────────────────────────────────────
 
-import process from "process";
-
 export interface CodeLocation {
   file_path: string;
   line_number: number;
