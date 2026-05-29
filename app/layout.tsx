@@ -1,5 +1,19 @@
 import type { Metadata } from 'next';
+import { Geist, Geist_Mono } from 'next/font/google'; // <-- Import Next.js font optimizer
 import './globals.css';
+
+// Configure the fonts
+const geistSans = Geist({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-geist-sans', // Creates a CSS variable so Tailwind can use it
+});
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-geist-mono',
+});
 
 export const metadata: Metadata = {
   title: 'Vyala Archon — Post-Quantum Cryptography Intelligence',
@@ -23,16 +37,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@300;400;500&display=swap"
-          rel="stylesheet"
-        />
-      </head>
-      <body className="antialiased">
+    // Apply the font CSS variables to the <html> tag
+    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable}`}>
+      {/* You no longer need the <head> links for fonts! Next.js handles it */}
+      <body className={`${geistSans.className} antialiased`}>
         {/* Ambient background orbs */}
         <div
           className="orb w-[600px] h-[600px] top-[-200px] left-[-200px]"
