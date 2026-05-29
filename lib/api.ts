@@ -41,7 +41,7 @@ export interface CBOMReport {
 
 // ─── API Client ────────────────────────────────────────────────────────────────
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'https://vyala-archon-brightdata-hackathon-production.up.railway.app/';
 
 export class ApiError extends Error {
   constructor(
