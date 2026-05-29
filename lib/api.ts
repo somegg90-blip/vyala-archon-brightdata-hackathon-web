@@ -1,7 +1,5 @@
 // ─── Data Contract ────────────────────────────────────────────────────────────
 
-import process from "process";
-
 export interface CodeLocation {
   file_path: string;
   line_number: number;
@@ -39,10 +37,12 @@ export interface CBOMReport {
   severity_breakdown: Record<string, number>;
 }
 
-// ─── API Client ────────────────────────────────────────────────────────────────
+// ─── API Client ───────────────────────────────────────────────────────────────
 
-// 1. ADD .replace(/\/+$/, '') TO REMOVE ANY TRAILING SLASHES
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'https://vyala-archon-brightdata-hackathon-production.up.railway.app/').replace(/\/+$/, '');
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL ??
+  'https://vyala-archon-brightdata-hackathon-production.up.railway.app/'
+).replace(/\/+$/, '');
 
 export class ApiError extends Error {
   constructor(
@@ -56,14 +56,13 @@ export class ApiError extends Error {
 }
 
 /**
- * Invoke a cryptographic supply-chain scan against the given target.
- * Maps directly to POST /api/scan/domain on the Python backend.
+ * Invoke a scan against a URL/domain or a server-side local folder.
+ * Maps to POST /api/scan/domain on the Python backend.
  */
 export async function invokeScan(
   target: string,
-  scanType: string = 'local'
+  scanType: string = 'web'
 ): Promise<CBOMReport> {
-  // 2. Now this will always construct perfectly: https://...up.railway.app/api/scan/domain
   const endpoint = `${API_BASE_URL}/api/scan/domain`;
 
   const response = await fetch(endpoint, {
@@ -89,37 +88,54 @@ export async function invokeScan(
     throw new ApiError(response.status, response.statusText, message);
   }
 
-  const data: CBOMReport = await response.json();
-  return data;
+  return response.json() as Promise<CBOMReport>;
 }
 
-// ... rest of your file remains exactly the same
+/**
+ * Upload a single source file from the browser for local crypto scanning.
+ * Maps to POST /api/scan/upload on the Python backend.
+ */
+export async function scanUploadedFile(file: File): Promise<CBOMReport> {
+  const formData = new FormData();
+  formData.append('file', file);
 
-// ─── Utility helpers ───────────────────────────────────────────────────────────
+  // Do NOT set Content-Type manually — browser sets it with the correct boundary
+  const response = await fetch(`${API_BASE_URL}/api/scan/upload`, {
+    method: 'POST',
+    body: formData,
+  });
 
-/** Returns the display label for a vulnerability class */
-export function getVulnClassLabel(vulnerabilityClass: string): string {
-  const map: Record<string, string> = {
-    SHOR_VULNERABLE: "Shor's Algorithm",
-    GROVER_WEAKENED: "Grover's Weakened",
-  };
-  return map[vulnerabilityClass] ?? vulnerabilityClass;
+  if (!response.ok) {
+    let message = `Upload scan failed with status ${response.status}`;
+    try {
+      const body = await response.json();
+      message = body?.detail ?? body?.message ?? message;
+    } catch {
+      // ignore parse errors on error bodies
+    }
+    throw new ApiError(response.status, response.statusText, message);
+  }
+
+  return response.json() as Promise<CBOMReport>;
 }
 
-/** Returns severity sort weight (lower = more severe) */
-export function severityWeight(severity: string): number {
-  const weights: Record<string, number> = {
-    CRITICAL: 0,
-    HIGH: 1,
-    MEDIUM: 2,
-    LOW: 3,
-  };
-  return weights[severity] ?? 99;
-}
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
-/** Sort findings by severity descending */
+const SEVERITY_ORDER: Record<string, number> = {
+  CRITICAL: 0,
+  HIGH: 1,
+  MEDIUM: 2,
+  LOW: 3,
+};
+
+/**
+ * Sort findings from most to least severe.
+ * Unrecognised severity values sort to the end.
+ */
 export function sortFindingsBySeverity(findings: CryptoFinding[]): CryptoFinding[] {
-  return [...findings].sort(
-    (a, b) => severityWeight(a.severity) - severityWeight(b.severity)
-  );
+  return [...findings].sort((a, b) => {
+    const aOrder = SEVERITY_ORDER[a.severity] ?? 99;
+    const bOrder = SEVERITY_ORDER[b.severity] ?? 99;
+    return aOrder - bOrder;
+  });
 }

@@ -1,38 +1,53 @@
 import { useState, useRef, KeyboardEvent, DragEvent, useCallback } from 'react';
-import { Terminal, Zap, ChevronRight, FolderCode, Globe, Upload, FileCode2, X, CheckCircle2 } from 'lucide-react';
+import {
+  Terminal, Zap, ChevronRight, FolderCode,
+  Globe, Upload, FileCode2, X, CheckCircle2,
+} from 'lucide-react';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { cn } from '@/lib/utils';
 
 interface InvokeTerminalProps {
-  onInvoke: (target: string, scanType: string) => Promise<void>;
+  // file is passed when scan_type === 'local' and the user dropped/selected a file
+  onInvoke: (target: string, scanType: string, file?: File) => Promise<void>;
   isLoading: boolean;
 }
 
 const SCAN_TYPES = [
-  { value: 'local', label: 'Local', icon: FolderCode },
-  { value: 'remote', label: 'Web (Bright Data)', icon: Globe },
+  { value: 'local',  label: 'Local',             icon: FolderCode },
+  { value: 'web',    label: 'Web (Bright Data)',  icon: Globe      },
 ];
 
 export default function InvokeTerminal({ onInvoke, isLoading }: InvokeTerminalProps) {
-  const [target, setTarget] = useState('');
-  const [scanType, setScanType] = useState('local');
-  const [focused, setFocused] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [droppedFile, setDroppedFile] = useState<{ name: string; path: string } | null>(null);
+  const [target,      setTarget]      = useState('');
+  const [scanType,    setScanType]    = useState('local');
+  const [focused,     setFocused]     = useState(false);
+  const [isDragging,  setIsDragging]  = useState(false);
+  // Store the actual File object so we can upload it, not just its path string
+  const [droppedFile, setDroppedFile] = useState<{ name: string; file: File } | null>(null);
 
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef    = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dropZoneRef = useRef<HTMLDivElement>(null);
+  const dropZoneRef  = useRef<HTMLDivElement>(null);
 
   const isLocal = scanType === 'local';
 
+  // For the invoke button: local needs a file OR a typed path; remote needs a URL
   const effectiveTarget = isLocal
-    ? (droppedFile?.path ?? target)
+    ? (droppedFile?.name ?? target)
     : target;
 
+  const canInvoke = effectiveTarget.trim().length > 0 && !isLoading;
+
+  // ── Handlers ─────────────────────────────────────────────────────────────────
+
   const handleInvoke = () => {
-    if (!effectiveTarget.trim() || isLoading) return;
-    onInvoke(effectiveTarget.trim(), scanType);
+    if (!canInvoke) return;
+    if (isLocal && droppedFile) {
+      // Pass the real File object up — parent will call scanUploadedFile()
+      onInvoke(droppedFile.name, 'local', droppedFile.file);
+    } else {
+      onInvoke(effectiveTarget.trim(), scanType);
+    }
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -45,7 +60,8 @@ export default function InvokeTerminal({ onInvoke, isLoading }: InvokeTerminalPr
     setTarget('');
   };
 
-  // ── Drag & Drop ─────────────────────────────────────────────────────────────
+  // ── Drag & Drop ──────────────────────────────────────────────────────────────
+
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -54,7 +70,6 @@ export default function InvokeTerminal({ onInvoke, isLoading }: InvokeTerminalPr
 
   const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    // Only leave if truly exiting the drop zone
     if (!dropZoneRef.current?.contains(e.relatedTarget as Node)) {
       setIsDragging(false);
     }
@@ -65,28 +80,21 @@ export default function InvokeTerminal({ onInvoke, isLoading }: InvokeTerminalPr
     e.stopPropagation();
     setIsDragging(false);
 
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length === 0) return;
-    const file = files[0];
-    // Use webkitRelativePath if available, else just the name
-    const path = (file as File & { path?: string }).path ?? file.name;
-    setDroppedFile({ name: file.name, path });
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    setDroppedFile({ name: file.name, file }); // ← store actual File object
   }, []);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const path = (file as File & { path?: string }).path ?? file.name;
-    setDroppedFile({ name: file.name, path });
-    // Reset so same file can be re-selected
-    e.target.value = '';
+    setDroppedFile({ name: file.name, file }); // ← store actual File object
+    e.target.value = ''; // reset so same file can be re-selected
   };
 
-  const clearFile = () => {
-    setDroppedFile(null);
-  };
+  const clearFile = () => setDroppedFile(null);
 
-  const canInvoke = effectiveTarget.trim().length > 0 && !isLoading;
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-3">
@@ -113,8 +121,10 @@ export default function InvokeTerminal({ onInvoke, isLoading }: InvokeTerminalPr
             className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md text-xs font-medium transition-all duration-150"
             style={{
               background: scanType === value ? 'rgba(245,158,11,0.12)' : 'transparent',
-              color: scanType === value ? 'var(--amber)' : 'var(--text-muted)',
-              border: scanType === value ? '1px solid rgba(245,158,11,0.2)' : '1px solid transparent',
+              color:      scanType === value ? 'var(--amber)'          : 'var(--text-muted)',
+              border:     scanType === value
+                ? '1px solid rgba(245,158,11,0.2)'
+                : '1px solid transparent',
             }}
           >
             <Icon size={12} />
@@ -139,8 +149,8 @@ export default function InvokeTerminal({ onInvoke, isLoading }: InvokeTerminalPr
             <div
               className="flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-200"
               style={{
-                background: 'rgba(34,197,94,0.05)',
-                borderColor: 'rgba(34,197,94,0.25)',
+                background:   'rgba(34,197,94,0.05)',
+                borderColor:  'rgba(34,197,94,0.25)',
               }}
             >
               <CheckCircle2 size={16} className="shrink-0" style={{ color: '#22c55e' }} />
@@ -149,7 +159,7 @@ export default function InvokeTerminal({ onInvoke, isLoading }: InvokeTerminalPr
                   {droppedFile.name}
                 </p>
                 <p className="text-[10px] mono truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  {droppedFile.path}
+                  {(droppedFile.file.size / 1024).toFixed(1)} KB · ready to upload
                 </p>
               </div>
               <button
@@ -171,19 +181,17 @@ export default function InvokeTerminal({ onInvoke, isLoading }: InvokeTerminalPr
               className="relative flex flex-col items-center justify-center gap-3 py-7 px-4 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200 group"
               style={{
                 borderColor: isDragging ? 'rgba(245,158,11,0.6)' : 'rgba(255,255,255,0.08)',
-                background: isDragging
-                  ? 'rgba(245,158,11,0.06)'
-                  : 'rgba(255,255,255,0.01)',
-                boxShadow: isDragging ? '0 0 24px rgba(245,158,11,0.08) inset' : 'none',
+                background:  isDragging ? 'rgba(245,158,11,0.06)' : 'rgba(255,255,255,0.01)',
+                boxShadow:   isDragging ? '0 0 24px rgba(245,158,11,0.08) inset' : 'none',
               }}
             >
               {/* Animated upload icon */}
               <div
                 className="flex items-center justify-center w-11 h-11 rounded-xl border transition-all duration-200"
                 style={{
-                  background: isDragging ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.03)',
-                  borderColor: isDragging ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.07)',
-                  transform: isDragging ? 'scale(1.08) translateY(-2px)' : 'scale(1)',
+                  background:  isDragging ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.03)',
+                  borderColor: isDragging ? 'rgba(245,158,11,0.4)'  : 'rgba(255,255,255,0.07)',
+                  transform:   isDragging ? 'scale(1.08) translateY(-2px)' : 'scale(1)',
                 }}
               >
                 {isDragging ? (
@@ -216,29 +224,34 @@ export default function InvokeTerminal({ onInvoke, isLoading }: InvokeTerminalPr
                   className={`absolute ${pos} w-2.5 h-2.5 border-t border-l transition-colors duration-200`}
                   style={{
                     borderColor: isDragging ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.1)',
-                    transform: pos.includes('right') ? 'rotate(90deg)' : pos.includes('bottom') && pos.includes('left') ? 'rotate(-90deg)' : pos.includes('bottom') ? 'rotate(180deg)' : '',
+                    transform: pos.includes('right')
+                      ? 'rotate(90deg)'
+                      : pos.includes('bottom') && pos.includes('left')
+                        ? 'rotate(-90deg)'
+                        : pos.includes('bottom')
+                          ? 'rotate(180deg)'
+                          : '',
                   }}
                 />
               ))}
             </div>
           )}
 
-          {/* Or type path manually */}
+          {/* Or type path manually (disabled when a file is already dropped) */}
           <div className="flex items-center gap-2">
             <div className="flex-1 h-px" style={{ background: 'var(--border-subtle)' }} />
             <span className="text-[10px] mono" style={{ color: 'var(--text-muted)' }}>or type path</span>
             <div className="flex-1 h-px" style={{ background: 'var(--border-subtle)' }} />
           </div>
 
-          {/* Manual path input */}
           <div
             className="relative flex items-center rounded-xl border transition-all duration-200"
             style={{
-              background: focused ? 'rgba(245,158,11,0.04)' : 'var(--bg-surface)',
+              background:  focused ? 'rgba(245,158,11,0.04)' : 'var(--bg-surface)',
               borderColor: focused ? 'rgba(245,158,11,0.35)' : 'var(--border-default)',
-              boxShadow: focused ? '0 0 0 3px rgba(245,158,11,0.06)' : 'none',
-              opacity: droppedFile ? 0.4 : 1,
-              pointerEvents: droppedFile ? 'none' : 'auto',
+              boxShadow:   focused ? '0 0 0 3px rgba(245,158,11,0.06)' : 'none',
+              opacity:        droppedFile ? 0.4 : 1,
+              pointerEvents:  droppedFile ? 'none' : 'auto',
             }}
           >
             <div
@@ -269,9 +282,9 @@ export default function InvokeTerminal({ onInvoke, isLoading }: InvokeTerminalPr
         <div
           className="relative flex items-center rounded-xl border transition-all duration-200"
           style={{
-            background: focused ? 'rgba(245,158,11,0.04)' : 'var(--bg-surface)',
+            background:  focused ? 'rgba(245,158,11,0.04)' : 'var(--bg-surface)',
             borderColor: focused ? 'rgba(245,158,11,0.35)' : 'var(--border-default)',
-            boxShadow: focused ? '0 0 0 3px rgba(245,158,11,0.06)' : 'none',
+            boxShadow:   focused ? '0 0 0 3px rgba(245,158,11,0.06)' : 'none',
           }}
         >
           <div
@@ -312,7 +325,7 @@ export default function InvokeTerminal({ onInvoke, isLoading }: InvokeTerminalPr
           background: isLoading
             ? 'rgba(245,158,11,0.1)'
             : 'linear-gradient(135deg, rgba(245,158,11,0.9) 0%, rgba(249,115,22,0.9) 100%)',
-          color: isLoading ? 'var(--amber)' : '#0a0600',
+          color:  isLoading ? 'var(--amber)' : '#0a0600',
           border: isLoading ? '1px solid rgba(245,158,11,0.2)' : '1px solid rgba(245,158,11,0.3)',
           boxShadow: canInvoke
             ? '0 4px 16px rgba(245,158,11,0.2), inset 0 1px 0 rgba(255,255,255,0.15)'
@@ -339,7 +352,11 @@ export default function InvokeTerminal({ onInvoke, isLoading }: InvokeTerminalPr
           Press{' '}
           <kbd
             className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border mono"
-            style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)' }}
+            style={{
+              borderColor: 'var(--border-subtle)',
+              color: 'var(--text-muted)',
+              background: 'rgba(255,255,255,0.03)',
+            }}
           >
             ⏎ Enter
           </kbd>{' '}
