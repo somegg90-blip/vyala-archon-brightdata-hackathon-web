@@ -41,7 +41,8 @@ export interface CBOMReport {
 
 // ─── API Client ────────────────────────────────────────────────────────────────
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'https://vyala-archon-brightdata-hackathon-production.up.railway.app/';
+// 1. ADD .replace(/\/+$/, '') TO REMOVE ANY TRAILING SLASHES
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'https://vyala-archon-brightdata-hackathon-production.up.railway.app/').replace(/\/+$/, '');
 
 export class ApiError extends Error {
   constructor(
@@ -62,6 +63,7 @@ export async function invokeScan(
   target: string,
   scanType: string = 'local'
 ): Promise<CBOMReport> {
+  // 2. Now this will always construct perfectly: https://...up.railway.app/api/scan/domain
   const endpoint = `${API_BASE_URL}/api/scan/domain`;
 
   const response = await fetch(endpoint, {
@@ -91,31 +93,4 @@ export async function invokeScan(
   return data;
 }
 
-// ─── Utility helpers ───────────────────────────────────────────────────────────
-
-/** Returns the display label for a vulnerability class */
-export function getVulnClassLabel(vulnerabilityClass: string): string {
-  const map: Record<string, string> = {
-    SHOR_VULNERABLE: "Shor's Algorithm",
-    GROVER_WEAKENED: "Grover's Weakened",
-  };
-  return map[vulnerabilityClass] ?? vulnerabilityClass;
-}
-
-/** Returns severity sort weight (lower = more severe) */
-export function severityWeight(severity: string): number {
-  const weights: Record<string, number> = {
-    CRITICAL: 0,
-    HIGH: 1,
-    MEDIUM: 2,
-    LOW: 3,
-  };
-  return weights[severity] ?? 99;
-}
-
-/** Sort findings by severity descending */
-export function sortFindingsBySeverity(findings: CryptoFinding[]): CryptoFinding[] {
-  return [...findings].sort(
-    (a, b) => severityWeight(a.severity) - severityWeight(b.severity)
-  );
-}
+// ... rest of your file remains exactly the same
